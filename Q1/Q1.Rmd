@@ -1,0 +1,86 @@
+---
+title: "Q1"
+output: html_notebook
+---
+
+Install and load necessary packages
+```{r}
+install.packages("readxl")
+install.packages("openxlsx")
+install.packages("dplyr")
+install.packages("tidyr")
+
+library(readxl)
+library(openxlsx)
+library(dplyr)
+library(tidyr)
+```
+
+
+
+Path to your Excel file
+```{r}
+file_path <- "SAS_Data_Experienced.xlsx"
+```
+
+Read each sheet into a separate dataframe
+```{r}
+activity_df <- read_excel(file_path, sheet = "Activity")
+diagnosis_df <- read_excel(file_path, sheet = "Diagnosis")
+rx_df <- read_excel(file_path, sheet = "Rx")
+```
+
+
+Display the first few rows of each dataframe
+```{r}
+head(activity_df)
+head(diagnosis_df)
+head(rx_df)
+```
+
+### a) Export to Excel a list of patients that are continuously enrolled for at least 12 months at any point in time.
+
+
+Reshape the activity data from wide to long format
+
+We are reshaping the dataset from wide format to long format for easier sequential analysis and simplifies group operations
+```{r}
+activity_long <- activity_df %>%
+  pivot_longer(cols = starts_with("M_"), 
+               names_to = "Month", 
+               values_to = "Enrolled") %>%
+  arrange(Patient_ID, Month)
+```
+
+```{r}
+head(activity_long)
+```
+
+Create a helper function to check for 12 consecutive months of enrollment
+```{r}
+has_12_consecutive <- function(enrollments) {
+  rle_result <- rle(enrollments)
+  any(rle_result$values == 1 & rle_result$lengths >= 12)
+}
+```
+
+Group by Patient_ID and check for 12 consecutive months
+```{r}
+patients_continuous <- activity_long %>%
+  group_by(Patient_ID) %>%
+  summarise(continuous_12_months = has_12_consecutive(Enrolled)) %>%
+  filter(continuous_12_months == TRUE) %>%
+  select(Patient_ID)
+```
+
+```{r}
+patients_continuous
+```
+
+Export the resulting patient list to a new Excel file
+```{r}
+write.xlsx(patients_continuous, "patients_continuously_enrolled.xlsx")
+```
+
+
+
