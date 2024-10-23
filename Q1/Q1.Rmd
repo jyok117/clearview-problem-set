@@ -79,8 +79,42 @@ patients_continuous
 
 Export the resulting patient list to a new Excel file
 ```{r}
-write.xlsx(patients_continuous, "patients_continuously_enrolled.xlsx")
+write.xlsx(patients_continuous, "patients_continuously_enrolled_12_months.xlsx")
 ```
+
+### b) Export to Excel a list of patients that are continuously enrolled for the most recent 12 months.
+
+```{r}
+recent_12_months <- activity_long %>%
+  group_by(Patient_ID) %>%
+  slice_tail(n = 12)
+```
+
+```{r}
+head(recent_12_months)
+```
+
+
+Check if all the recent 12 months show enrollment (1)
+```{r}
+recently_enrolled <- recent_12_months %>%
+  group_by(Patient_ID) %>%
+  summarise(All_Enrolled = all(Enrolled == 1)) %>%
+  filter(All_Enrolled == TRUE) %>%
+  select(Patient_ID)
+```
+
+Output the dataframe for inspection
+```{r}
+recently_enrolled
+```
+
+Export the resulting patient list to a new Excel file
+```{r}
+write.xlsx(recently_enrolled, "patients_most_recent_enrolled_12_months.xlsx")
+```
+
+
 
 
 
