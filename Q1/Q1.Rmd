@@ -79,7 +79,7 @@ patients_continuous
 
 Export the resulting patient list to a new Excel file
 ```{r}
-write.xlsx(patients_continuous, "patients_continuously_enrolled_12_months.xlsx")
+write.xlsx(patients_continuous, "patients_continuously_12_months.xlsx")
 ```
 
 ### b) Export to Excel a list of patients that are continuously enrolled for the most recent 12 months.
@@ -111,9 +111,47 @@ recently_enrolled
 
 Export the resulting patient list to a new Excel file
 ```{r}
-write.xlsx(recently_enrolled, "patients_most_recent_enrolled_12_months.xlsx")
+write.xlsx(recently_enrolled, "patients_most_recent_12_months.xlsx")
 ```
 
+### c) Of patients in “b”, flag the patients that have received at least 2 ICD codes of any listed below (i.e. it could be 2 of the same kind or 1 of multiple different ones) in the most recent 12 months. i) 299.00, 399.88, 495.01
+
+Read the list of patients from part (b) (most recent 12 months enrolled excel file)
+```{r}
+most_recent_patients <- read_excel("patients_most_recent_12_months.xlsx")
+```
+
+List of ICD codes of interest
+```{r}
+icd_codes_of_interest <- c("299.00", "399.88", "495.01")
+```
+
+Filter Diagnosis data for the most recent patients and specified ICD codes
+```{r}
+recent_12_months_diagnosis <- diagnosis_df %>%
+  filter(Patient_ID %in% most_recent_patients$Patient_ID & Diag_Code %in% icd_codes_of_interest)
+```
+
+Get the diagnoses within the most recent 12 months
+```{r}
+recent_12_months_diagnosis <- recent_12_months_diagnosis %>%
+  mutate(Date = as.Date(Date)) %>%
+  arrange(Patient_ID, Date) %>%
+  group_by(Patient_ID) %>%
+  slice_tail(n = 12)
+```
+
+Count ICD codes for each patient and filter those with at least 2 codes
+```{r}
+patients_with_at_least_2_icd <- recent_12_months_diagnosis %>%
+  group_by(Patient_ID) %>%
+  summarise(ICD_Count = n()) %>%
+  filter(ICD_Count >= 2)
+```
+
+```{r}
+patients_with_at_least_2_icd
+```
 
 
 
