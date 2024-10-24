@@ -8,6 +8,8 @@ output:
 
 Install and load necessary packages
 ```{r}
+options(repos = c(CRAN = "https://cloud.r-project.org/"))
+
 install.packages("readxl")
 install.packages("openxlsx")
 install.packages("dplyr")
