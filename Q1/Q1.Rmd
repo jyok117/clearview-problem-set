@@ -44,6 +44,13 @@ head(rx_df)
 ```
 
 
+Ensure that the date columns in diagnosis_df and rx_df are properly recognized as dates, convert 'Date' columns to Date type if not already
+```{r}
+diagnosis_df$Date <- as.Date(diagnosis_df$Date)
+rx_df$`Rx Date` <- as.Date(rx_df$`Rx Date`)
+```
+
+
 ---
 
 
@@ -53,19 +60,24 @@ head(rx_df)
 Reshape the activity data from wide to long format for easier sequential analysis and simplifies group operations
 ```{r}
 activity_long <- activity_df %>%
-  pivot_longer(cols = starts_with("M_"), 
-               names_to = "Month", 
-               values_to = "Enrolled") %>%
-  arrange(Patient_ID, Month)
+  pivot_longer(
+    cols = starts_with("M_"),
+    names_to = "Month",
+    values_to = "Enrolled"
+  ) %>%
+  arrange(Patient_ID, Month) %>%
+  mutate(
+    Year_Month = ymd(paste0(gsub("M_", "", Month), "01"))
+  )
 ```
 
 
 ```{r}
-head(activity_long)
+activity_long
 ```
 
 
-Create a helper function to check for 12 consecutive months of enrollment
+Helper function to check for 12 consecutive months of enrollment
 ```{r}
 has_12_consecutive <- function(enrollments) {
   rle_result <- rle(enrollments)
@@ -103,20 +115,21 @@ write.xlsx(patients_continuous, "patients_continuously_12_months.xlsx")
 
 Extract the most recent 12 months for each patient
 ```{r}
-recent_12_months <- activity_long %>%
+recent_months <- activity_long %>%
   group_by(Patient_ID) %>%
-  slice_tail(n = 12)
+  arrange(desc(Year_Month)) %>%
+  slice_head(n = 12)
 ```
 
 
 ```{r}
-head(recent_12_months)
+recent_months
 ```
 
 
 Check if all the recent 12 months show enrollment (1)
 ```{r}
-recently_enrolled <- recent_12_months %>%
+recently_enrolled <- recent_months %>%
   group_by(Patient_ID) %>%
   summarise(All_Enrolled = all(Enrolled == 1)) %>%
   filter(All_Enrolled == TRUE) %>%
@@ -153,13 +166,10 @@ icd_codes_of_interest <- c("299.00", "399.88", "495.01")
 ```
 
 
-Extract the most recent month from the Activity data (assuming the columns are ordered chronologically)
+Get the most recent date from the activity data
 ```{r}
-activity_months <- colnames(activity_df)[grep("M_", colnames(activity_df))]
-most_recent_month <- max(activity_months)
-most_recent_year_month <- sub("M_", "", most_recent_month)
-most_recent_date <- as.Date(paste0(most_recent_year_month, "31"), format = "%Y%m%d")
-one_year_ago <- most_recent_date %m-% months(12)
+most_recent_date <- max(activity_long$Year_Month)
+one_year_ago <- most_recent_date %m-% months(11)
 ```
 
 
@@ -172,20 +182,11 @@ print(one_year_ago)
 Ensure that only the most recent patients patients' diagnoses are considered
 ```{r}
 recent_diagnosis_df <- diagnosis_df %>%
-  filter(Patient_ID %in% recently_enrolled$Patient_ID &
-         Diag_Code %in% icd_codes_of_interest)
-```
-
-
-```{r}
-recent_diagnosis_df
-```
-
-
-Filter for diagnoses that occurred in the most recent 12 months
-```{r}
-recent_diagnosis_df <- recent_diagnosis_df %>%
-  filter(Date >= one_year_ago & Date <= most_recent_date)
+  filter(
+    Patient_ID %in% recently_enrolled$Patient_ID,
+    Diag_Code %in% icd_codes_of_interest,
+    Date >= one_year_ago & Date <= most_recent_date
+  )
 ```
 
 
@@ -206,7 +207,6 @@ patients_with_at_least_2_icd <- recent_diagnosis_df %>%
 ```{r}
 patients_with_at_least_2_icd
 ```
-
 
 
 ---
@@ -230,8 +230,10 @@ icd_codes_of_interest <- c("299.00", "399.88", "495.01")
 Filter the diagnosis data for only the patients in the "a" list and the ICD codes of interest
 ```{r}
 relevant_diagnosis_df <- diagnosis_df %>%
-  filter(Patient_ID %in% patients_continuous$Patient_ID &
-         Diag_Code %in% icd_codes_of_interest)
+  filter(
+    Patient_ID %in% patients_continuous$Patient_ID,
+    Diag_Code %in% icd_codes_of_interest
+  )
 ```
 
 
@@ -248,54 +250,69 @@ first_claim_df <- relevant_diagnosis_df %>%
 ```
 
 
-
 ```{r}
 first_claim_df
 ```
 
 
-Reshape the activity data to long format to make it easier to analyze month-by-month enrollment
+Merge with Activity Data
 ```{r}
-activity_long <- activity_df %>%
-  pivot_longer(cols = starts_with("M_"), 
-               names_to = "Month", 
-               values_to = "Enrollment_Status") %>%
-  mutate(Month = as.Date(paste0(gsub("M_", "", Month), "01"), format = "%Y%m%d"))
+activity_long <- activity_long %>%
+  select(Patient_ID, Year_Month, Enrolled)
+
+patients_activity <- first_claim_df %>%
+  inner_join(activity_long, by = "Patient_ID")
 ```
 
 
 ```{r}
-activity_long
+patients_activity
+```
+
+Helper function to check continuous enrollment in a given period
+```{r}
+check_continuous_enrollment <- function(data, start_date, end_date) {
+  required_months <- seq.Date(from = start_date, to = end_date, by = "month")
+  enrollment_status <- data %>%
+    filter(Year_Month %in% required_months) %>%
+    arrange(Year_Month)
+  all(enrollment_status$Enrolled == 1) && nrow(enrollment_status) == length(required_months)
+}
+
 ```
 
 
-Merge the first diagnosis claim with activity data to check for 12-month washout and 24-month look-forward
+Check 12-Month Washout and 24-Month Look-Forward
 ```{r}
-patients_with_diagnosis_claims <- first_claim_df %>%
-  left_join(activity_long, by = "Patient_ID") %>%
-  mutate(Month_Enrollment_Prior = Month < First_Diagnosis_Date & 
-                                   Month >= First_Diagnosis_Date - years(1),
-         Month_Enrollment_After = Month > First_Diagnosis_Date & 
-                                  Month <= First_Diagnosis_Date + years(2)) %>%
+patients_with_washout <- patients_activity %>%
   group_by(Patient_ID) %>%
-  summarise(Enrolled_12_Months_Prior = all(Enrollment_Status[Month_Enrollment_Prior] == 1),
-            Enrolled_24_Months_After = all(Enrollment_Status[Month_Enrollment_After] == 1)) %>%
-  filter(Enrolled_12_Months_Prior == TRUE & Enrolled_24_Months_After == TRUE)
+  do({
+    first_diag_date <- unique(.$First_Diagnosis_Date)
+    washout_start <- first_diag_date %m-% months(12)
+    look_forward_end <- first_diag_date %m+% months(23)  # 24 months including current month
+    data.frame(
+      Enrolled_12_Months_Prior = check_continuous_enrollment(., washout_start, first_diag_date %m-% months(1)),
+      Enrolled_24_Months_After = check_continuous_enrollment(., first_diag_date, look_forward_end)
+    )
+  }) %>%
+  filter(Enrolled_12_Months_Prior & Enrolled_24_Months_After)
+
 ```
 
 
 ```{r}
-patients_with_diagnosis_claims
+patients_with_washout
 ```
 
 
-Flag patients with at least 2 of the specified ICD codes
+Identify Patients with At Least 2 ICD Codes
 ```{r}
 patients_with_at_least_2_icd_12_24_washout <- relevant_diagnosis_df %>%
-  filter(Patient_ID %in% patients_with_diagnosis_claims$Patient_ID) %>%
+  filter(Patient_ID %in% patients_with_washout$Patient_ID) %>%
   group_by(Patient_ID) %>%
   summarise(ICD_Count = n()) %>%
   filter(ICD_Count >= 2)
+
 ```
 
 
