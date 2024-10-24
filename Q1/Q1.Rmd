@@ -9,13 +9,14 @@ install.packages("readxl")
 install.packages("openxlsx")
 install.packages("dplyr")
 install.packages("tidyr")
+install.packages("lubridate")
 
 library(readxl)
 library(openxlsx)
 library(dplyr)
 library(tidyr)
+library(lubridate)
 ```
-
 
 
 Path to your Excel file
@@ -126,33 +127,43 @@ List of ICD codes of interest
 icd_codes_of_interest <- c("299.00", "399.88", "495.01")
 ```
 
-Filter Diagnosis data for the most recent patients and specified ICD codes
+Extract the most recent month from the Activity data (assuming the columns are ordered chronologically)
 ```{r}
-recent_12_months_diagnosis <- diagnosis_df %>%
-  filter(Patient_ID %in% most_recent_patients$Patient_ID & Diag_Code %in% icd_codes_of_interest)
+activity_months <- colnames(activity_df)[grep("M_", colnames(activity_df))]
+most_recent_month <- max(activity_months)
+most_recent_year_month <- sub("M_", "", most_recent_month)
+most_recent_date <- as.Date(paste0(most_recent_year_month, "31"), format = "%Y%m%d")
+one_year_ago <- most_recent_date %m-% months(12)
 ```
 
-Get the diagnoses within the most recent 12 months
 ```{r}
-recent_12_months_diagnosis <- recent_12_months_diagnosis %>%
-  mutate(Date = as.Date(Date)) %>%
-  arrange(Patient_ID, Date) %>%
-  group_by(Patient_ID) %>%
-  slice_tail(n = 12)
+print(most_recent_date)
+print(one_year_ago)
 ```
 
-Count ICD codes for each patient and filter those with at least 2 codes
+Ensure that only the most recent patients patients' diagnoses are considered
 ```{r}
-patients_with_at_least_2_icd <- recent_12_months_diagnosis %>%
+recent_diagnosis_df <- diagnosis_df %>%
+  filter(Patient_ID %in% most_recent_patients$Patient_ID &
+         Diag_Code %in% icd_codes_of_interest)
+```
+
+Filter for diagnoses that occurred in the most recent 12 months
+```{r}
+recent_diagnosis_df <- recent_diagnosis_df %>%
+  filter(Date >= one_year_ago & Date <= most_recent_date)
+```
+
+Filter the patients with at least 2 of the specified ICD codes in the most recent 12 months
+```{r}
+patients_with_at_least_2_icd <- recent_diagnosis_df %>%
   group_by(Patient_ID) %>%
   summarise(ICD_Count = n()) %>%
   filter(ICD_Count >= 2)
 ```
 
+
 ```{r}
 patients_with_at_least_2_icd
 ```
-
-
-
 
