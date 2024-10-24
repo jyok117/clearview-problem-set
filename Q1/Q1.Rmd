@@ -3,6 +3,7 @@ title: "Q1"
 output: html_notebook
 ---
 
+
 Install and load necessary packages
 ```{r}
 install.packages("readxl")
@@ -24,6 +25,7 @@ Path to your Excel file
 file_path <- "SAS_Data_Experienced.xlsx"
 ```
 
+
 Read each sheet into a separate dataframe
 ```{r}
 activity_df <- read_excel(file_path, sheet = "Activity")
@@ -39,12 +41,14 @@ head(diagnosis_df)
 head(rx_df)
 ```
 
+
+---
+
+
 ### a) Export to Excel a list of patients that are continuously enrolled for at least 12 months at any point in time.
 
 
-Reshape the activity data from wide to long format
-
-We are reshaping the dataset from wide format to long format for easier sequential analysis and simplifies group operations
+Reshape the activity data from wide to long format for easier sequential analysis and simplifies group operations
 ```{r}
 activity_long <- activity_df %>%
   pivot_longer(cols = starts_with("M_"), 
@@ -53,9 +57,11 @@ activity_long <- activity_df %>%
   arrange(Patient_ID, Month)
 ```
 
+
 ```{r}
 head(activity_long)
 ```
+
 
 Create a helper function to check for 12 consecutive months of enrollment
 ```{r}
@@ -64,6 +70,7 @@ has_12_consecutive <- function(enrollments) {
   any(rle_result$values == 1 & rle_result$lengths >= 12)
 }
 ```
+
 
 Group by Patient_ID and check for 12 consecutive months
 ```{r}
@@ -74,22 +81,31 @@ patients_continuous <- activity_long %>%
   select(Patient_ID)
 ```
 
+
 ```{r}
 patients_continuous
 ```
+
 
 Export the resulting patient list to a new Excel file
 ```{r}
 write.xlsx(patients_continuous, "patients_continuously_12_months.xlsx")
 ```
 
+
+---
+
+
 ### b) Export to Excel a list of patients that are continuously enrolled for the most recent 12 months.
 
+
+Extract the most recent 12 months for each patient
 ```{r}
 recent_12_months <- activity_long %>%
   group_by(Patient_ID) %>%
   slice_tail(n = 12)
 ```
+
 
 ```{r}
 head(recent_12_months)
@@ -105,27 +121,35 @@ recently_enrolled <- recent_12_months %>%
   select(Patient_ID)
 ```
 
-Output the dataframe for inspection
+
 ```{r}
 recently_enrolled
 ```
+
 
 Export the resulting patient list to a new Excel file
 ```{r}
 write.xlsx(recently_enrolled, "patients_most_recent_12_months.xlsx")
 ```
 
+
+---
+
+
 ### c) Of patients in “b”, flag the patients that have received at least 2 ICD codes of any listed below (i.e. it could be 2 of the same kind or 1 of multiple different ones) in the most recent 12 months. i) 299.00, 399.88, 495.01
+
 
 Read the list of patients from part (b) (most recent 12 months enrolled excel file)
 ```{r}
 most_recent_patients <- read_excel("patients_most_recent_12_months.xlsx")
 ```
 
+
 List of ICD codes of interest
 ```{r}
 icd_codes_of_interest <- c("299.00", "399.88", "495.01")
 ```
+
 
 Extract the most recent month from the Activity data (assuming the columns are ordered chronologically)
 ```{r}
@@ -136,10 +160,12 @@ most_recent_date <- as.Date(paste0(most_recent_year_month, "31"), format = "%Y%m
 one_year_ago <- most_recent_date %m-% months(12)
 ```
 
+
 ```{r}
 print(most_recent_date)
 print(one_year_ago)
 ```
+
 
 Ensure that only the most recent patients patients' diagnoses are considered
 ```{r}
@@ -148,11 +174,13 @@ recent_diagnosis_df <- diagnosis_df %>%
          Diag_Code %in% icd_codes_of_interest)
 ```
 
+
 Filter for diagnoses that occurred in the most recent 12 months
 ```{r}
 recent_diagnosis_df <- recent_diagnosis_df %>%
   filter(Date >= one_year_ago & Date <= most_recent_date)
 ```
+
 
 Filter the patients with at least 2 of the specified ICD codes in the most recent 12 months
 ```{r}
@@ -166,4 +194,5 @@ patients_with_at_least_2_icd <- recent_diagnosis_df %>%
 ```{r}
 patients_with_at_least_2_icd
 ```
+
 
